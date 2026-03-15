@@ -5,7 +5,8 @@ A RESTful API to track personal expenses and get monthly spending insights.
 **Tech Stack:** FastAPI · SQLAlchemy · SQLite · Pydantic · Python 3.13
 
 ## Live Demo
-API Docs: _coming soon (Railway deployment)_
+- **API Docs:** https://finance-tracker-production-d962.up.railway.app/docs
+- **Dashboard:** https://finance-tracker-production-d962.up.railway.app/dashboard
 
 ## Quick Start
 ```bash
