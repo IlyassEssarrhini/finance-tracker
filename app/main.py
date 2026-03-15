@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from app.database import eingine, Base
 from app.routers import expenses,summary
 
@@ -10,14 +12,20 @@ app = FastAPI(
     version= "1.0.0",
 )
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 app.include_router(expenses.router)
 app.include_router(summary.router)
 
+@app.get("/dashboard", tags=["Dashboard"])
+def get_dashboard():
+    return FileResponse("static/dashboard.html")
 @app.get("/", tags=["Root"])
 def root():
     return {
         "message": "Welcome to the Personal Finance Tracker API",
         "docs" : "/docs",
+        "dashboard" : "/dashboard",
     }
 
 #Was diese Datei macht

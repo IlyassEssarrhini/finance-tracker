@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>💸 Finance Tracker Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: #0f1419; color: #e2e8f0; min-height: 100vh; }
+    .topbar { background: #0a0f16; border-bottom: 1px solid #1e2530; padding: 0 24px; height: 52px; display: flex; align-items: center; justify-content: space-between; }
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+    .logo { width: 28px; height: 28px; border-radius: 6px; background: linear-gradient(135deg, #f59e0b, #ef4444); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+    .topbar h1 { font-size: 15px; font-weight: 700; color: #fff; }
+    .badge { font-size: 11px; background: #22c55e18; color: #22c55e; border: 1px solid #22c55e33; padding: 3px 10px; border-radius: 6px; }
+    .container { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+    .card { background: #151d27; border: 1px solid #1e2d3d; border-radius: 12px; padding: 18px 20px; }
+    .kpi-label { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+    .kpi-value { font-size: 22px; font-weight: 800; color: #f1f5f9; margin-bottom: 4px; }
+    .kpi-sub { font-size: 11px; color: #64748b; margin-bottom: 10px; }
+    .kpi-bar-track { height: 3px; background: #1e2d3d; border-radius: 2px; }
+    .kpi-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+    .charts-grid { display: grid; grid-template-columns: 1fr 1fr 300px; gap: 14px; margin-bottom: 14px; }
+    .card-title { font-size: 13px; font-weight: 700; color: #e2e8f0; margin-bottom: 2px; }
+    .card-sub { font-size: 11px; color: #475569; margin-bottom: 14px; }
+    .bottom-grid { display: grid; grid-template-columns: 1fr 360px; gap: 14px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { padding: 10px 20px; text-align: left; font-size: 11px; color: #475569; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; background: #0f1419; }
+    td { padding: 11px 20px; font-size: 13px; border-top: 1px solid #1a2030; }
+    tr:hover td { background: #1e2838; }
+    .cat-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+    .filter-bar { display: flex; gap: 6px; }
+    .filter-btn { font-size: 11px; padding: 4px 10px; border-radius: 6px; border: none; cursor: pointer; background: #1e2d3d; color: #64748b; font-family: inherit; transition: all 0.15s; }
+    .filter-btn.active { background: #f97316; color: #fff; font-weight: 600; }
+    .api-source { background: #0f1419; border-radius: 8px; padding: 10px 12px; font-size: 11px; color: #22c55e; font-family: monospace; margin-top: 14px; }
+    .cat-row { margin-bottom: 12px; }
+    .cat-row-header { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; }
+    .cat-name { color: #94a3b8; }
+    .cat-amount { font-weight: 700; }
+    .cat-track { height: 6px; background: #1e2d3d; border-radius: 4px; overflow: hidden; }
+    .cat-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+    .loading { display: flex; align-items: center; justify-content: center; height: 200px; color: #475569; font-size: 13px; }
+  </style>
+</head>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const BUDGET = 800;
+        const CAT_COLORS = {
+            "Lebensmittel": "#06b6d4", "Transport": "#8b5cf6",
+            "Entertainment": "#ec4899", "Essen gehen": "#f97316",
+            "Shopping": "#eab308", "Sport & Gesundheit": "#22c55e"
+        };
+        const DEFAULT_COLOR = "#64748b";
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        document.getElementById("current-month").textContent =
+            now.toLocaleString("de-DE", {month: "long", year: "numeric"});
+
+        let allExpenses = [];
+        let activeFilter = "Alle";
+        let barChart, lineChart, donutChart;
+
+        function eur(amount) {
+            return new Intl.NumberFormat("de-DE", {style: "currency", currency: "EUR"}).format(amount);
+        }
+
+        async function loadSummary() {
+            const res = await fetch(`/summary/monthly?year=${year}&month=${month}`);
+            const data = await res.json();
+
+            const pct = Math.min((data.total_spent / BUDGET) * 100, 100);
+            document.getElementById("total-spent").textContent = eur(data.total_spent);
+            document.getElementById("expense-count").textContent = `${data.expense_count} Transaktionen`;
+            document.getElementById("budget-bar").style.width = pct + "%";
+            document.getElementById("budget-left").textContent = eur(BUDGET - data.total_spent);
+            document.getElementById("budget-left-bar").style.width = (100 - pct) + "%";
+            document.getElementById("api-source").textContent =
+                `GET /summary/monthly?year=${year}&month=${month}`;
+
+            if (data.by_category.length > 0) {
+                document.getElementById("top-cat").textContent = data.by_category[0].category;
+                document.getElementById("top-cat-amount").textContent = eur(data.by_category[0].total);
+            }
+
+            renderBarChart(data.by_category);
+            renderDonutChart(data.by_category);
+            renderCatAnalysis(data.by_category);
+        }
+
+        async function loadExpenses() {
+            const res = await fetch("/expenses/?limit=50");
+            allExpenses = await res.json();
+
+            const total = allExpenses.reduce((s, e) => s + e.amount, 0);
+            document.getElementById("tx-count").textContent = allExpenses.length;
+            document.getElementById("avg-amount").textContent =
+                `Ø ${eur(allExpenses.length ? total / allExpenses.length : 0)} / Transaktion`;
+
+            renderLineChart(allExpenses);
+            renderFilters(allExpenses);
+            renderTable(allExpenses);
+        }
+
+        function renderBarChart(categories) {
+            const ctx = document.getElementById("barChart").getContext("2d");
+            if (barChart) barChart.destroy();
+            barChart = new Chart(ctx, {
+                type: "bar",
+                data: {
+                    labels: categories.map(c => c.category),
+                    datasets: [{
+                        data: categories.map(c => c.total),
+                        backgroundColor: categories.map(c => CAT_COLORS[c.category] || DEFAULT_COLOR),
+                        borderRadius: 6,
+                    }]
+                },
+                options: {
+                    responsive: true, plugins: {legend: {display: false}},
+                    scales: {
+                        x: {ticks: {color: "#475569", font: {size: 11}}, grid: {display: false}},
+                        y: {ticks: {color: "#475569", font: {size: 11}}, grid: {color: "#1e2d3d"}}
+                    }
+                }
+            });
+        }
+
+        function renderDonutChart(categories) {
+            const ctx = document.getElementById("donutChart").getContext("2d");
+            if (donutChart) donutChart.destroy();
+            donutChart = new Chart(ctx, {
+                type: "doughnut",
+                data: {
+                    labels: categories.map(c => c.category),
+                    datasets: [{
+                        data: categories.map(c => c.total),
+                        backgroundColor: categories.map(c => CAT_COLORS[c.category] || DEFAULT_COLOR),
+                        borderWidth: 0,
+                    }]
+                },
+                options: {
+                    responsive: true, cutout: "65%",
+                    plugins: {legend: {position: "bottom", labels: {color: "#64748b", font: {size: 11}, boxWidth: 12}}}
+                }
+            });
+        }
+
+        function renderLineChart(expenses) {
+            const ctx = document.getElementById("lineChart").getContext("2d");
+            if (lineChart) lineChart.destroy();
+            const sorted = [...expenses].sort((a, b) => a.date.localeCompare(b.date)).slice(-10);
+            lineChart = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: sorted.map(e => e.date.slice(5)),
+                    datasets: [{
+                        data: sorted.map(e => e.amount),
+                        borderColor: "#06b6d4",
+                        backgroundColor: "#06b6d422",
+                        fill: true, tension: 0.4,
+                        pointBackgroundColor: "#06b6d4", pointRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true, plugins: {legend: {display: false}},
+                    scales: {
+                        x: {ticks: {color: "#475569", font: {size: 11}}, grid: {display: false}},
+                        y: {ticks: {color: "#475569", font: {size: 11}}, grid: {color: "#1e2d3d"}}
+                    }
+                }
+            });
+        }
+
+        function renderFilters(expenses) {
+            const cats = ["Alle", ...new Set(expenses.map(e => e.category))];
+            const bar = document.getElementById("filter-bar");
+            bar.innerHTML = cats.map(c =>
+                `<button class="filter-btn ${c === activeFilter ? 'active' : ''}"
+          onclick="setFilter('${c}')">${c}</button>`
+            ).join("");
+        }
+
+        function setFilter(cat) {
+            activeFilter = cat;
+            renderFilters(allExpenses);
+            renderTable(allExpenses);
+        }
+
+        function renderTable(expenses) {
+            const filtered = activeFilter === "Alle"
+                ? expenses : expenses.filter(e => e.category === activeFilter);
+            const tbody = document.getElementById("expense-table");
+            tbody.innerHTML = filtered.map(e => {
+                const color = CAT_COLORS[e.category] || DEFAULT_COLOR;
+                return `<tr>
+          <td style="color:#cbd5e1;">${e.title}</td>
+          <td><span class="cat-badge" style="color:${color};background:${color}20;">${e.category}</span></td>
+          <td style="color:#475569;">${e.date}</td>
+          <td style="text-align:right;font-weight:700;color:#f1f5f9;">${eur(e.amount)}</td>
+        </tr>`;
+            }).join("");
+        }
+
+        function renderCatAnalysis(categories) {
+            const max = categories[0]?.total || 1;
+            document.getElementById("cat-analysis").innerHTML = categories.map(c => {
+                const color = CAT_COLORS[c.category] || DEFAULT_COLOR;
+                const pct = (c.total / max) * 100;
+                return `<div class="cat-row">
+          <div class="cat-row-header">
+            <span class="cat-name">${c.category}</span>
+            <div style="display:flex;gap:10px;align-items:center;">
+              <span style="font-size:11px;color:#475569;">${c.count}x</span>
+              <span class="cat-amount" style="color:${color};">${eur(c.total)}</span>
+            </div>
+          </div>
+          <div class="cat-track">
+            <div class="cat-fill" style="width:${pct}%;background:${color};"></div>
+          </div>
+        </div>`;
+            }).join("");
+        }
+
+        loadSummary();
+        loadExpenses();
+    });
+  </script>
+
+<body>
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="logo">💸</div>
+      <h1>Finance Tracker</h1>
+      <span class="badge">● Live</span>
+    </div>
+    <div id="current-month" style="font-size:12px; color:#475569;"></div>
+  </div>
+
+  <div class="container">
+
+    <!-- KPI Karten -->
+    <div class="kpi-grid">
+      <div class="card">
+        <div class="kpi-label">Ausgaben gesamt</div>
+        <div class="kpi-value" id="total-spent">...</div>
+        <div class="kpi-sub" id="expense-count">...</div>
+        <div class="kpi-bar-track"><div class="kpi-bar-fill" id="budget-bar" style="background:#f97316;"></div></div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Budget übrig</div>
+        <div class="kpi-value" id="budget-left">...</div>
+        <div class="kpi-sub">Budget: 800.00 €</div>
+        <div class="kpi-bar-track"><div class="kpi-bar-fill" id="budget-left-bar" style="background:#06b6d4;"></div></div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Transaktionen</div>
+        <div class="kpi-value" id="tx-count">...</div>
+        <div class="kpi-sub" id="avg-amount">...</div>
+        <div class="kpi-bar-track"><div class="kpi-bar-fill" style="background:#8b5cf6; width:70%;"></div></div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Top Kategorie</div>
+        <div class="kpi-value" id="top-cat">...</div>
+        <div class="kpi-sub" id="top-cat-amount">...</div>
+        <div class="kpi-bar-track"><div class="kpi-bar-fill" style="background:#22c55e; width:60%;"></div></div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid">
+      <div class="card">
+        <div class="card-title">Ausgaben nach Kategorie</div>
+        <div class="card-sub">aktueller Monat</div>
+        <canvas id="barChart" height="160"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-title">Letzte Ausgaben</div>
+        <div class="card-sub">Verlauf</div>
+        <canvas id="lineChart" height="160"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-title">Verteilung</div>
+        <div class="card-sub">nach Kategorie</div>
+        <canvas id="donutChart" height="160"></canvas>
+      </div>
+    </div>
+
+    <!-- Tabelle + Kategorie Analyse -->
+    <div class="bottom-grid">
+      <div class="card" style="padding:0; overflow:hidden;">
+        <div style="padding:16px 20px; border-bottom:1px solid #1e2d3d; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div class="card-title">Transaktionen</div>
+            <div class="card-sub" style="margin:0;">alle Ausgaben</div>
+          </div>
+          <div class="filter-bar" id="filter-bar"></div>
+        </div>
+        <table>
+          <thead><tr><th>Titel</th><th>Kategorie</th><th>Datum</th><th style="text-align:right;">Betrag</th></tr></thead>
+          <tbody id="expense-table"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Kategorie-Analyse</div>
+        <div class="card-sub">Betrag & Häufigkeit</div>
+        <div id="cat-analysis"></div>
+        <div class="api-source" id="api-source"></div>
+      </div>
+    </div>
+
+  </div>
+
+</body>
