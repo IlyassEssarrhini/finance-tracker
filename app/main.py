@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.database import eingine, Base
-from app.routers import expenses,summary
+from app.routers import expenses,summary, auth
 
 Base.metadata.create_all(bind=eingine)
 
@@ -16,6 +16,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(expenses.router)
 app.include_router(summary.router)
+
+app.include_router(auth.router)
 
 @app.get("/dashboard", tags=["Dashboard"])
 def get_dashboard():
